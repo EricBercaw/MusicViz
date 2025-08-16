@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spotify Live Data (Browser)</title>
+  <style>
+    :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    body { margin: 0; background:#0b0b0f; color:#e6e6e6; }
+    header { padding: 16px 20px; display:flex; gap:12px; align-items:center; border-bottom:1px solid #222; }
+    button { padding:10px 14px; border-radius:10px; border:0; background:#1db954; color:black; font-weight:700; cursor:pointer; }
+    button.secondary { background:#2a2a2a; color:#ddd; }
+    main { padding:20px; display:grid; gap:16px; max-width:900px; margin:0 auto; }
+    .card { background:#111318; border:1px solid #222; border-radius:14px; padding:16px; }
+    .row { display:flex; align-items:center; gap:12px; }
+    .art { width:64px; height:64px; border-radius:8px; background:#333; object-fit:cover; }
+    code, pre { background:#0f1320; color:#cfd7ff; padding:8px 10px; border-radius:8px; display:block; overflow:auto; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    .meter { height:8px; background:#222; border-radius:999px; overflow:hidden; }
+    .meter > div { height:100%; background:#1db954; width:0%; transition: width 0.35s linear; }
+    .muted { color:#9aa3b2; }
+  </style>
+  <!-- Optional: Spotify Web Playback SDK (only needed if you also want a local player device) -->
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+</head>
+<body>
+  <header>
+    <h3 style="margin:0">Spotify Live Data</h3>
+    <button id="btnAuth">Connect to Spotify</button>
+    <button id="btnLogout" class="secondary" title="Clear token">Logout</button>
+    <span id="whoami" class="muted"></span>
+  </header>
+  <main>
+    <section class="card">
+      <h4>Now Playing</h4>
+      <div class="row">
+        <img id="art" class="art" />
+        <div>
+          <div id="title" style="font-weight:700">—</div>
+          <div id="artist" class="muted">—</div>
+          <div id="album" class="muted">—</div>
+        </div>
+      </div>
+      <div style="margin-top:12px" class="mono">
+        <span id="position">0:00</span> / <span id="duration">0:00</span>
+        <div class="meter" style="margin-top:6px"><div id="progress"></div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h4>Audio Features</h4>
+      <div class="grid mono">
+        <div>tempo: <span id="tempo">—</span></div>
+        <div>energy: <span id="energy">—</span></div>
+        <div>danceability: <span id="danceability">—</span></div>
+        <div>valence: <span id="valence">—</span></div>
+        <div>key: <span id="key">—</span></div>
+        <div>mode: <span id="mode">—</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h4>Raw Now-Playing Payload</h4>
+      <pre id="raw" class="mono" style="max-height:240px"></pre>
+    </section>
+  </main>
+
+  <script>
+    // ===== CONFIG =====
+    const CLIENT_ID = "YOUR_SPOTIFY_CLIENT_ID"; // <-- put your app's Client ID here
+    const REDIRECT_URI = window.location.origin + window.location.pathname; // or set an explicit URL you added in the Spotify Dashboard
+    const SCOPES = [
+      "user-read-playback-state",
+      "user-read-currently-playing"
+      // add "streaming","user-modify-playback-state" if you also want to play via the Web Playback SDK
+    ];
+
+    // ===== UTILITIES =====
+    const $ = (id) => document.getElementById(id);
+    function msToClock(ms){
+      if (!ms || ms < 0) return "0:00";
+      const s = Math.floor(ms/1000), m = Math.floor(s/60), r = s%60;
+      return `${m}:${r.toString().padStart(2,'0')}`;
+    }
+
+    // ===== AUTH (Implicit Grant: fully browser-only) =====
+    function login(){
+      const state = crypto.getRandomValues(new Uint32Array(4)).join("-");
+      localStorage.setItem("spotify_state", state);
+      const url = new URL("https://accounts.spotify.com/authorize");
+      url.searchParams.set("client_id", CLIENT_ID);
+      url.searchParams.set("response_type", "token");
+      url.searchParams.set("redirect_uri", REDIRECT_URI);
+      url.searchParams.set("scope", SCOPES.join(" "));
+      url.searchParams.set("state", state);
+      url.searchParams.set("show_dialog", "false");
+      window.location = url.toString();
+    }
+
+    function parseHash(){
+      if (!location.hash.startsWith("#")) return null;
+      const params = new URLSearchParams(location.hash.substring(1));
+      const access_token = params.get("access_token");
+      const token_type = params.get("token_type");
+      const expires_in = Number(params.get("expires_in"));
+      const state = params.get("state");
+      if (!access_token) return null;
+      if (state !== localStorage.getItem("spotify_state")) {
+        console.warn("State mismatch; ignoring tokens.");
+        return null;
+      }
+      const expires_at = Date.now() + (expires_in * 1000) - 5000; // small buffer
+      const token = { access_token, token_type, expires_at };
+      localStorage.setItem("spotify_token", JSON.stringify(token));
+      // Clean the hash from URL
+      history.replaceState({}, document.title, REDIRECT_URI);
+      return token;
+    }
+
+    function getToken(){
+      const parsed = parseHash();
+      if (parsed) return parsed;
+      const raw = localStorage.getItem("spotify_token");
+      if (!raw) return null;
+      const tok = JSON.parse(raw);
+      if (Date.now() > tok.expires_at) return null;
+      return tok;
+    }
+
+    function logout(){
+      localStorage.removeItem("spotify_token");
+      $("whoami").textContent = "";
+      $("raw").textContent = "";
+      ["title","artist","album","tempo","energy","danceability","valence","key","mode","duration","position"].forEach(id=>$(id).textContent = "—");
+      $("progress").style.width = "0%";
+      $("art").src = "";
+    }
+
+    // ===== API CALLS =====
+    async function api(path, init={}){
+      const tok = getToken();
+      if (!tok) throw new Error("Not authenticated");
+      const res = await fetch(`https://api.spotify.com/v1${path}`, {
+        ...init,
+        headers: { ...(init.headers||{}), Authorization: `Bearer ${tok.access_token}` }
+      });
+      if (res.status === 204) return null;
+      if (!res.ok) throw new Error(`Spotify API ${res.status}: ${await res.text()}`);
+      return res.json();
+    }
+
+    async function me(){
+      try {
+        const data = await api('/me');
+        $("whoami").textContent = `Signed in as ${data.display_name || data.id}`;
+      } catch (e) { console.warn(e); }
+    }
+
+    let lastTrackId = null;
+    let progressMs = 0;
+    let durationMs = 0;
+    let isPlaying = false;
+    let tickHandle = null;
+
+    async function fetchNowPlaying(){
+      try {
+        const np = await api('/me/player/currently-playing');
+        $("raw").textContent = JSON.stringify(np, null, 2);
+        if (!np || !np.item) return;
+        const t = np.item;
+        lastTrackId = t.id;
+        durationMs = t.duration_ms;
+        progressMs = np.progress_ms || 0;
+        isPlaying = !!np.is_playing;
+
+        $("title").textContent = t.name || '—';
+        $("artist").textContent = (t.artists||[]).map(a=>a.name).join(', ');
+        $("album").textContent = t.album?.name || '—';
+        $("duration").textContent = msToClock(durationMs);
+        $("position").textContent = msToClock(progressMs);
+        const img = t.album?.images?.[1]?.url || t.album?.images?.[0]?.url;
+        if (img) $("art").src = img;
+        $("progress").style.width = `${Math.min(100, (progressMs/durationMs)*100)}%`;
+
+        // On track change, fetch audio features once
+        if (lastTrackId) fetchAudioFeatures(lastTrackId);
+      } catch (e) {
+        if (String(e).includes('Not authenticated')) return;
+        console.error(e);
+      }
+    }
+
+    async function fetchAudioFeatures(trackId){
+      try {
+        const feat = await api(`/audio-features/${trackId}`);
+        $("tempo").textContent = Math.round(feat.tempo);
+        $("energy").textContent = feat.energy?.toFixed(2);
+        $("danceability").textContent = feat.danceability?.toFixed(2);
+        $("valence").textContent = feat.valence?.toFixed(2);
+        $("key").textContent = feat.key;
+        $("mode").textContent = feat.mode ? 'major' : 'minor';
+      } catch (e) { console.warn(e); }
+    }
+
+    function startTicker(){
+      if (tickHandle) clearInterval(tickHandle);
+      tickHandle = setInterval(()=>{
+        if (isPlaying) {
+          progressMs += 1000;
+          $("position").textContent = msToClock(progressMs);
+          $("progress").style.width = `${Math.min(100, (progressMs/durationMs)*100)}%`;
+        }
+      }, 1000);
+    }
+
+    let pollHandle = null;
+    function startPolling(){
+      if (pollHandle) clearInterval(pollHandle);
+      pollHandle = setInterval(fetchNowPlaying, 2000); // 2s polling for live-ish updates
+    }
+
+    // ===== OPTIONAL: Initialize Web Playback SDK (if you also want to control playback)
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      // Requires the "streaming" scope and a valid token
+      const tok = getToken();
+      if (!tok) return;
+      const player = new Spotify.Player({ name: 'Visualizer Player', getOAuthToken: cb => cb(tok.access_token), volume: 0.5 });
+      player.addListener('ready', ({ device_id }) => { console.log('Web Playback SDK ready with Device ID', device_id); });
+      player.addListener('not_ready', ({ device_id }) => { console.log('Device ID has gone offline', device_id); });
+      player.addListener('initialization_error', ({ message }) => console.error(message));
+      player.addListener('authentication_error', ({ message }) => console.error(message));
+      player.addListener('account_error', ({ message }) => console.error(message));
+      player.addListener('player_state_changed', state => {
+        if (!state) return;
+        isPlaying = !state.paused;
+        progressMs = state.position;
+        durationMs = state.duration;
+        $("position").textContent = msToClock(progressMs);
+        $("duration").textContent = msToClock(durationMs);
+        $("progress").style.width = `${Math.min(100, (progressMs/durationMs)*100)}%`;
+      });
+      player.connect();
+    };
+
+    // ===== WIRE UP =====
+    $("btnAuth").addEventListener('click', login);
+    $("btnLogout").addEventListener('click', logout);
+
+    (async function init(){
+      const tok = getToken();
+      if (tok) {
+        await me();
+        await fetchNowPlaying();
+        startTicker();
+        startPolling();
+      }
+    })();
+  </script>
+</body>
+</html>
