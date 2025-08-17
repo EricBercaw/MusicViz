@@ -49,35 +49,47 @@ async function exchangeCodeForTokens(code) {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
-    redirect_uri: SPOTIFY_REDIRECT_URI,
-    client_id: SPOTIFY_CLIENT_ID,
-    client_secret: SPOTIFY_CLIENT_SECRET
+    redirect_uri: SPOTIFY_REDIRECT_URI
   });
 
   const resp = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
     body
   });
-  if (!resp.ok) throw new Error(`Token exchange failed: ${resp.status}`);
-  return resp.json();
+
+  const text = await resp.text(); // capture error payload for logging
+  if (!resp.ok) {
+    console.error('🔴 Token exchange error', resp.status, text);
+    throw new Error(`Token exchange failed: ${resp.status}`);
+  }
+  return JSON.parse(text);
 }
 
 async function refreshAccessToken(refresh_token) {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
-    refresh_token,
-    client_id: SPOTIFY_CLIENT_ID,
-    client_secret: SPOTIFY_CLIENT_SECRET
+    refresh_token
   });
 
   const resp = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
     body
   });
-  if (!resp.ok) throw new Error(`Refresh failed: ${resp.status}`);
-  return resp.json();
+
+  const text = await resp.text();
+  if (!resp.ok) {
+    console.error('🔴 Refresh error', resp.status, text);
+    throw new Error(`Refresh failed: ${resp.status}`);
+  }
+  return JSON.parse(text);
 }
 
 function isExpired(sess) {
@@ -91,8 +103,7 @@ async function ensureAccessToken(req) {
   if (isExpired(sess)) {
     const data = await refreshAccessToken(sess.spotify.refresh_token);
     sess.spotify.access_token = data.access_token;
-    // Only provided sometimes:
-    if (data.refresh_token) sess.spotify.refresh_token = data.refresh_token;
+    if (data.refresh_token) sess.spotify.refresh_token = data.refresh_token; // sometimes returned
     sess.spotify.expires_at = Date.now() + data.expires_in * 1000;
   }
   return sess.spotify.access_token;
@@ -114,13 +125,18 @@ app.get('/login', (req, res) => {
     redirect_uri: SPOTIFY_REDIRECT_URI,
     scope
   });
-  res.redirect(`https://accounts.spotify.com/authorize?${params.toString()}`);
+
+  const url = `https://accounts.spotify.com/authorize?${params.toString()}`;
+  console.log('➡️  Authorize URL:', url);
+  res.redirect(url);
 });
 
 app.get('/callback', async (req, res) => {
   try {
     const code = req.query.code?.toString();
     if (!code) return res.status(400).send('Missing code');
+
+    console.log('↩️  Callback hit. Using redirect_uri =', SPOTIFY_REDIRECT_URI);
 
     const data = await exchangeCodeForTokens(code);
     req.session.spotify = {
@@ -151,10 +167,9 @@ let cachedClientToken = typeof cachedClientToken === 'undefined' ? null : cached
 let clientTokenExpires = typeof clientTokenExpires === 'undefined' ? 0 : clientTokenExpires;
 
 function clearTokenCaches() {
-  // Clear any server-side token caches
   cachedClientToken = null;
   clientTokenExpires = 0;
-  // If you also have old vars from the preview build, clear them too:
+  // If you also had preview-mode vars, clear them too:
   // if (typeof cachedToken !== 'undefined') cachedToken = null;
   // if (typeof tokenExpiresAt !== 'undefined') tokenExpiresAt = 0;
 }
