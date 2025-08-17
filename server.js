@@ -163,15 +163,16 @@ app.get('/token', async (req, res) => {
 });
 
 // --- Logout / clear tokens ---
-let cachedClientToken = typeof cachedClientToken === 'undefined' ? null : cachedClientToken;
-let clientTokenExpires = typeof clientTokenExpires === 'undefined' ? 0 : clientTokenExpires;
+// Simple, non-self-referential declarations:
+let cachedClientToken = null;
+let clientTokenExpires = 0;
 
 function clearTokenCaches() {
   cachedClientToken = null;
   clientTokenExpires = 0;
-  // If you also had preview-mode vars, clear them too:
-  // if (typeof cachedToken !== 'undefined') cachedToken = null;
-  // if (typeof tokenExpiresAt !== 'undefined') tokenExpiresAt = 0;
+  // If you also have legacy preview-mode caches, clear them here (only if they exist):
+  // cachedToken = null;
+  // tokenExpiresAt = 0;
 }
 
 app.post('/logout', (req, res) => {
@@ -179,7 +180,7 @@ app.post('/logout', (req, res) => {
     clearTokenCaches();
     req.session.destroy(err => {
       if (err) return res.status(500).json({ error: 'logout_failed' });
-      res.clearCookie('connect.sid'); // change if you renamed the session cookie
+      res.clearCookie('connect.sid');
       return res.sendStatus(204);
     });
   } catch {
@@ -187,7 +188,6 @@ app.post('/logout', (req, res) => {
   }
 });
 
-// Optional convenience GET for manual testing
 app.get('/logout', (req, res) => {
   clearTokenCaches();
   req.session.destroy(() => {
