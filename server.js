@@ -13,9 +13,9 @@ const __dirname = path.dirname(__filename);
 const {
   SPOTIFY_CLIENT_ID,
   SPOTIFY_CLIENT_SECRET,
-  SPOTIFY_REDIRECT_URI = 'https://localhost:8443/callback',
+  SPOTIFY_REDIRECT_URI = 'https://127.0.0.1:8443/callback',
   PORT = 8443,
-  HOST = 'localhost',
+  HOST = '127.0.0.1',
   SESSION_SECRET = 'change_me'
 } = process.env;
 
