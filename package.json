@@ -1,7 +1,7 @@
 {
-  "name": "spotify-visualizer",
+  "name": "musicviz",
   "version": "1.0.0",
-  "description": "Browser music visualizer using Spotify preview URLs with an HTTPS-ready Node server.",
+  "description": "Spotify Premium visualizer with Web Playback SDK and login",
   "type": "module",
   "scripts": {
     "start": "node server.js",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "express-session": "^1.17.3"
   }
 }
