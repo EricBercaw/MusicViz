@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spotify Visualizer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Spotify Visualizer</h1>
+    <form id="search-form" autocomplete="off">
+      <input id="q" name="q" type="search" placeholder="Search songs or artists…" />
+      <button type="submit">Search</button>
+    </form>
+  </header>
+  <main class="app-main">
+    <section class="results" id="results"></section>
+    <section class="player">
+      <div id="nowPlaying">Pick a track above</div>
+      <div class="controls">
+        <button id="play">Play</button>
+        <button id="pause">Pause</button>
+        <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" />
+      </div>
+      <canvas id="viz" width="1024" height="320"></canvas>
+      <audio id="audio" crossorigin="anonymous"></audio>
+    </section>
+  </main>
+  <footer><small>Uses Spotify preview_url.</small></footer>
+  <script src="index.js" type="module"></script>
+</body>
+</html>
