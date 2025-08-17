@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Spotify Visualizer</title>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>Spotify Preview Visualizer</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -11,13 +14,15 @@
     <h1>Spotify Visualizer</h1>
     <form id="search-form" autocomplete="off">
       <input id="q" name="q" type="search" placeholder="Search songs or artists…" />
-      <button type="submit">Search</button>
+      <button type="submit" title="Search">Search</button>
     </form>
   </header>
+
   <main class="app-main">
     <section class="results" id="results"></section>
+
     <section class="player">
-      <div id="nowPlaying">Pick a track above</div>
+      <div class="now-playing" id="nowPlaying">Pick a track above</div>
       <div class="controls">
         <button id="play">Play</button>
         <button id="pause">Pause</button>
@@ -27,7 +32,14 @@
       <audio id="audio" crossorigin="anonymous"></audio>
     </section>
   </main>
-  <footer><small>Uses Spotify preview_url.</small></footer>
+
+  <footer class="app-footer">
+    <small>
+      Uses Spotify’s 30s <code>preview_url</code> (no login required). For full tracks, switch to the Web
+      Playback SDK and a Premium account—but note DRM prevents raw audio routing for the Web Audio API.
+    </small>
+  </footer>
+
   <script src="index.js" type="module"></script>
 </body>
 </html>
