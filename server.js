@@ -24,7 +24,7 @@ app.use((req, res, next) => {
       "script-src 'self' https://sdk.scdn.co",             // add 'unsafe-eval' here only if truly needed
       "connect-src 'self' https://api.spotify.com https://accounts.spotify.com",
       "img-src 'self' data: https:",
-      "style-src 'self' 'unsafe-inline'"
+      "style-src 'self'"
     ].join("; ")
   );
   next();
