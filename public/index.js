@@ -1,17 +1,14 @@
-// Minimal, resilient visualizer using Web Audio API and Spotify preview URLs
-
+const loginBtn = document.getElementById('loginBtn');
+const userBadge = document.getElementById('userBadge');
 const form = document.getElementById('search-form');
 const q = document.getElementById('q');
 const results = document.getElementById('results');
-const audio = document.getElementById('audio');
 const nowPlaying = document.getElementById('nowPlaying');
 const playBtn = document.getElementById('play');
 const pauseBtn = document.getElementById('pause');
-const volume = document.getElementById('volume');
 const canvas = document.getElementById('viz');
 const ctx = canvas.getContext('2d', { alpha: false });
 
-// CSS/Canvas crispness fix on HiDPI
 function resizeCanvasForDPR() {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   const rect = canvas.getBoundingClientRect();
@@ -21,24 +18,55 @@ function resizeCanvasForDPR() {
 resizeCanvasForDPR();
 addEventListener('resize', resizeCanvasForDPR);
 
-// Lock AudioContext until user gesture
-let audioCtx;
-let analyser;
-let srcNode;
-let dataArray;
+// --- Login UI ---
+loginBtn.addEventListener('click', () => {
+  location.href = '/login';
+});
 
-function ensureAudioChain() {
-  if (audioCtx) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const track = audioCtx.createMediaElementSource(audio);
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;               // decent resolution without getting too heavy
-  analyser.smoothingTimeConstant = 0.85; // smoother bars
-  track.connect(analyser);
-  analyser.connect(audioCtx.destination);
-  dataArray = new Uint8Array(analyser.frequencyBinCount);
+async function fetchMe() {
+  const r = await fetch('/api/me');
+  if (r.status === 401) return null;
+  const j = await r.json();
+  return j;
 }
 
+// --- Web Playback SDK ---
+let deviceId = null;
+let player = null;
+let beats = []; // seconds array
+let trackId = null;
+
+window.onSpotifyWebPlaybackSDKReady = async () => {
+  player = new Spotify.Player({
+    name: 'MusicViz Player',
+    getOAuthToken: async cb => {
+      const r = await fetch('/token');
+      if (!r.ok) return;
+      const { access_token } = await r.json();
+      cb(access_token);
+    },
+    volume: 0.8
+  });
+
+  player.addListener('ready', ({ device_id }) => {
+    deviceId = device_id;
+    // Transfer playback to this device
+    fetch('/api/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: deviceId })
+    });
+  });
+
+  player.addListener('initialization_error', ({ message }) => console.error('init_err', message));
+  player.addListener('authentication_error', ({ message }) => console.error('auth_err', message));
+  player.addListener('account_error', ({ message }) => console.error('acct_err', message));
+  player.addListener('playback_error', ({ message }) => console.error('playback_err', message));
+
+  await player.connect();
+};
+
+// --- Search + Play ---
 async function searchTracks(query) {
   const url = new URL('/api/search', location.origin);
   url.searchParams.set('q', query);
@@ -55,32 +83,48 @@ function renderResults(items = []) {
   results.innerHTML = items.map(t => {
     const artists = (t.artists || []).map(a => a.name).join(', ');
     const image = t.album?.images?.[1]?.url || t.album?.images?.[0]?.url || '';
-    const disabled = !t.preview_url ? 'disabled' : '';
     return `
-      <button class="track" data-id="${t.id}" ${disabled} title="${t.name} - ${artists}">
+      <button class="track" data-uri="${t.uri}" data-id="${t.id}" title="${t.name} - ${artists}">
         <img src="${image}" alt="" />
         <div class="meta">
           <div class="t">${t.name}</div>
           <div class="a">${artists}</div>
-          ${t.preview_url ? '' : '<div class="no-prev">No preview</div>'}
         </div>
       </button>
     `;
   }).join('');
 }
 
-async function loadTrack(id) {
-  const r = await fetch(`/api/track/${id}`);
-  if (!r.ok) throw new Error('Track fetch failed');
-  const t = await r.json();
-  if (!t.preview_url) {
-    nowPlaying.textContent = 'No preview available for this track.';
+results.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.track');
+  if (!btn) return;
+  if (!deviceId) {
+    alert('Player not ready. If you just logged in, wait a moment.');
     return;
   }
-  audio.src = t.preview_url;
-  nowPlaying.textContent = `${t.name} — ${(t.artists || []).map(a => a.name).join(', ')}`;
-  await audio.play().catch(() => {}); // autoplay policies may block; user can press Play
-}
+  const uri = btn.dataset.uri;
+  trackId = btn.dataset.id;
+
+  // Start playback
+  await fetch('/api/play', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: deviceId, uri })
+  });
+
+  // Fetch beats for visualization
+  beats = await getBeats(trackId);
+  nowPlaying.textContent = 'Playing…';
+});
+
+playBtn.addEventListener('click', async () => {
+  if (!player) return;
+  await player.resume();
+});
+pauseBtn.addEventListener('click', async () => {
+  if (!player) return;
+  await player.pause();
+});
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -95,63 +139,70 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
-results.addEventListener('click', async (e) => {
-  const btn = e.target.closest('.track');
-  if (!btn || btn.disabled) return;
-  ensureAudioChain();
-  if (audioCtx.state === 'suspended') await audioCtx.resume();
-  await loadTrack(btn.dataset.id);
-});
+// --- Beats (Audio Analysis) ---
+async function getBeats(id) {
+  try {
+    const r = await fetch(`/api/analysis/${id}`);
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (j.beats || []).map(b => b.start); // seconds
+  } catch {
+    return [];
+  }
+}
 
-playBtn.addEventListener('click', async () => {
-  ensureAudioChain();
-  if (audioCtx.state === 'suspended') await audioCtx.resume();
-  await audio.play();
-});
-pauseBtn.addEventListener('click', () => audio.pause());
-volume.addEventListener('input', () => { audio.volume = Number(volume.value); });
-
-// --- Visualization loop ---
+// --- Visualization loop (pulse on nearest beat) ---
 function draw() {
-  if (analyser) {
-    analyser.getByteFrequencyData(dataArray);
-    const W = canvas.width;
-    const H = canvas.height;
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.fillStyle = '#0b0d10';
+  ctx.fillRect(0, 0, W, H);
 
-    // Clear (opaque bg to avoid CSS paint issues)
-    ctx.fillStyle = '#0b0d10';
-    ctx.fillRect(0, 0, W, H);
+  if (player && beats.length) {
+    player.getCurrentState().then(state => {
+      if (!state) return;
+      const posSec = state.position / 1000;
+      // find time to next/prev beat
+      let i = 0;
+      while (i < beats.length && beats[i] < posSec) i++;
+      const prev = beats[Math.max(0, i - 1)] ?? 0;
+      const next = beats[i] ?? prev + 0.5;
+      const dist = Math.min(Math.abs(posSec - prev), Math.abs(next - posSec));
 
-    // Bars
-    const bars = 96; // choose subset to avoid too many thin bars
-    const step = Math.floor(dataArray.length / bars);
-    const barWidth = (W / bars) * 0.8;
-    const gap = (W / bars) * 0.2;
+      // Pulse strength inverse to distance to beat
+      const strength = Math.max(0, 1 - dist * 4); // tweak falloff
+      const bars = 48;
+      const barWidth = (W / bars) * 0.8;
+      const gap = (W / bars) * 0.2;
 
-    for (let i = 0; i < bars; i++) {
-      const v = dataArray[i * step] / 255;
-      const h = v * (H * 0.9) + 1;
-      const x = i * (barWidth + gap);
-      const y = H - h;
-
-      // gradient-ish luminance without picking CSS colors explicitly
-      ctx.fillStyle = `rgb(${Math.round(40 + v * 180)}, ${Math.round(200 - v * 120)}, ${Math.round(255)})`;
-      ctx.fillRect(x, y, barWidth, h);
-    }
-
-    // baseline
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, H - 2, W, 2);
+      for (let b = 0; b < bars; b++) {
+        const v = Math.sin((b / bars) * Math.PI) * strength; // spatial shape
+        const h = v * (H * 0.8) + 2;
+        const x = b * (barWidth + gap);
+        const y = H - h;
+        ctx.fillStyle = `rgb(${Math.round(60 + v * 180)}, ${Math.round(160 + v * 80)}, 255)`;
+        ctx.fillRect(x, y, barWidth, h);
+      }
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, H - 2, W, 2);
+    }).catch(() => {});
   }
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
 
-// Start with a friendly default search to reduce “empty page” feel
+// --- Init: check login; seed results when logged in ---
 (async () => {
-  try {
-    const data = await searchTracks('Daft Punk');
-    renderResults(data.tracks?.items || []);
-  } catch {}
+  const me = await fetchMe();
+  if (me) {
+    userBadge.textContent = `Hi, ${me.display_name || me.id}`;
+    loginBtn.style.display = 'none';
+    try {
+      const data = await searchTracks('Daft Punk');
+      renderResults(data.tracks?.items || []);
+    } catch {}
+  } else {
+    userBadge.textContent = 'Not logged in';
+    loginBtn.style.display = 'inline-block';
+  }
 })();
-// index.js placeholder. Use full code provided in the conversation.
