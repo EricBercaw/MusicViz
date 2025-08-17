@@ -1,4 +1,5 @@
-import 'dotenv/config';
+// replace: import 'dotenv/config';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
@@ -9,6 +10,9 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ✅ force-load the .env next to server.js and override any exported vars
+dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
 const {
   SPOTIFY_CLIENT_ID,
