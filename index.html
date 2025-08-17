@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Spotify Live Data (Browser)</title>
+  <title>Spotify Live Data (PKCE)</title>
   <style>
     :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
     body { margin: 0; background:#0b0b0f; color:#e6e6e6; }
@@ -21,12 +21,11 @@
     .meter > div { height:100%; background:#1db954; width:0%; transition: width 0.35s linear; }
     .muted { color:#9aa3b2; }
   </style>
-  <!-- Optional: Spotify Web Playback SDK (only needed if you also want a local player device) -->
   <script src="https://sdk.scdn.co/spotify-player.js"></script>
 </head>
 <body>
   <header>
-    <h3 style="margin:0">Spotify Live Data</h3>
+    <h3 style="margin:0">Spotify Live Data (PKCE)</h3>
     <button id="btnAuth">Connect to Spotify</button>
     <button id="btnLogout" class="secondary" title="Clear token">Logout</button>
     <span id="whoami" class="muted"></span>
@@ -61,82 +60,93 @@
     </section>
 
     <section class="card">
-      <h4>Raw Now-Playing Payload</h4>
+      <h4>Auth / Debug</h4>
       <pre id="raw" class="mono" style="max-height:240px"></pre>
     </section>
   </main>
 
   <script>
     // ===== CONFIG =====
-    const CLIENT_ID = "07f3dda064eb4a6c9226822edd2885b7"; // <-- your Spotify app's Client ID
-    const REDIRECT_URI = "https://localhost:3000/callback"; // must EXACTLY match a saved Redirect URI in your Spotify dashboard
-    const SCOPES = [
-      "user-read-playback-state",
-      "user-read-currently-playing"
-      // add "streaming","user-modify-playback-state" if you also want to play via the Web Playback SDK
-    ];
+    const CLIENT_ID = "07f3dda064eb4a6c9226822edd2885b7"; // your Spotify app's Client ID
+    const REDIRECT_URI = "https://localhost:3000/callback";   // MUST be saved in Spotify dashboard
+    const SCOPES = ["user-read-playback-state", "user-read-currently-playing"]; // add more if needed
 
     // ===== UTILITIES =====
     const $ = (id) => document.getElementById(id);
-    function msToClock(ms){
+    const msToClock = (ms) => {
       if (!ms || ms < 0) return "0:00";
       const s = Math.floor(ms/1000), m = Math.floor(s/60), r = s%60;
       return `${m}:${r.toString().padStart(2,'0')}`;
-    }
+    };
 
-    // ===== AUTH (Implicit Grant: fully browser-only) =====
-    function login(){
+    // ===== PKCE HELPERS =====
+    const generateRandomString = (length) => {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const bytes = crypto.getRandomValues(new Uint8Array(length));
+      return Array.from(bytes, b => chars[b % chars.length]).join("");
+    };
+    const sha256 = async (plain) => {
+      const data = new TextEncoder().encode(plain);
+      return await crypto.subtle.digest("SHA-256", data);
+    };
+    const base64url = (buffer) => {
+      const bytes = new Uint8Array(buffer);
+      let str = "";
+      for (let i = 0; i < bytes.byteLength; i++) str += String.fromCharCode(bytes[i]);
+      return btoa(str).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+    };
+
+    // ===== AUTH (Authorization Code with PKCE) =====
+    async function login(){
       const state = crypto.getRandomValues(new Uint32Array(4)).join("-");
       localStorage.setItem("spotify_state", state);
-      const url = new URL("https://accounts.spotify.com/authorize");
-      url.searchParams.set("client_id", CLIENT_ID);
-      url.searchParams.set("response_type", "token");
-      url.searchParams.set("redirect_uri", REDIRECT_URI);
-      url.searchParams.set("scope", SCOPES.join(" "));
-      url.searchParams.set("state", state);
-      url.searchParams.set("show_dialog", "true");
-      console.log("Authorize URL:", url.toString());
-      window.location = url.toString();
+
+      const code_verifier = generateRandomString(64);
+      localStorage.setItem("spotify_code_verifier", code_verifier);
+      const code_challenge = base64url(await sha256(code_verifier));
+
+      const auth = new URL("https://accounts.spotify.com/authorize");
+      auth.searchParams.set("client_id", CLIENT_ID);
+      auth.searchParams.set("response_type", "code");
+      auth.searchParams.set("redirect_uri", REDIRECT_URI);
+      auth.searchParams.set("scope", SCOPES.join(" "));
+      auth.searchParams.set("state", state);
+      auth.searchParams.set("code_challenge_method", "S256");
+      auth.searchParams.set("code_challenge", code_challenge);
+      auth.searchParams.set("show_dialog", "true");
+
+      console.log("Authorize URL:", auth.toString());
+      window.location = auth.toString();
     }
 
-    function parseHash() {
-  if (!location.hash.startsWith("#")) return null;
-  const params = new URLSearchParams(location.hash.substring(1));
+    async function exchangeCodeForToken(code){
+      const code_verifier = localStorage.getItem("spotify_code_verifier");
+      if (!code_verifier) throw new Error("Missing PKCE code_verifier");
 
-  // If Spotify returned an error in the hash, surface it
-  const err = params.get("error");
-  if (err) {
-    console.error("Spotify auth error:", err);
-    alert("Spotify auth error: " + err);
-    return null;
-  }
+      const res = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: CLIENT_ID,
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: REDIRECT_URI,
+          code_verifier
+        })
+      });
+      if (!res.ok) throw new Error(`Token exchange failed: ${res.status} ${await res.text()}`);
 
-  const access_token = params.get("access_token");
-  const token_type = params.get("token_type");
-  const expires_in = Number(params.get("expires_in"));
-  const state = params.get("state");
-  if (!access_token) return null;
+      const data = await res.json();
+      const expires_at = Date.now() + data.expires_in * 1000 - 5000;
+      const token = { access_token: data.access_token, token_type: data.token_type, expires_at };
+      localStorage.setItem("spotify_token", JSON.stringify(token));
+      if (data.refresh_token) localStorage.setItem("spotify_refresh_token", data.refresh_token);
 
-  // Protect against mixing localhost/127.0.0.1 tabs
-  if (state !== localStorage.getItem("spotify_state")) {
-    console.warn("State mismatch; ignoring tokens.");
-    alert("State mismatch. Clear storage and try again.");
-    return null;
-  }
+      history.replaceState({}, document.title, "/index.html"); // return to app shell after callback
+      return token;
+    }
 
-  const expires_at = Date.now() + (expires_in * 1000) - 5000;
-  const token = { access_token, token_type, expires_at };
-  localStorage.setItem("spotify_token", JSON.stringify(token));
-
-  // clean hash
-  history.replaceState({}, document.title, REDIRECT_URI);
-  return token;
-}
-
-
-    function getToken(){
-      const parsed = parseHash();
-      if (parsed) return parsed;
+    function getStoredToken(){
       const raw = localStorage.getItem("spotify_token");
       if (!raw) return null;
       const tok = JSON.parse(raw);
@@ -144,18 +154,25 @@
       return tok;
     }
 
-    function logout(){
-      localStorage.removeItem("spotify_token");
-      $("whoami").textContent = "";
-      $("raw").textContent = "";
-      ["title","artist","album","tempo","energy","danceability","valence","key","mode","duration","position"].forEach(id=>$(id).textContent = "—");
-      $("progress").style.width = "0%";
-      $("art").src = "";
+    async function ensureToken(){
+      const existing = getStoredToken();
+      if (existing) return existing;
+
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get("error");
+      if (err) throw new Error("Spotify auth error: " + err);
+      const state = params.get("state");
+      if (state && state !== localStorage.getItem("spotify_state")) {
+        throw new Error("State mismatch; clear storage and try again.");
+      }
+      const code = params.get("code");
+      if (code) return await exchangeCodeForToken(code);
+      return null; // not authenticated yet
     }
 
     // ===== API CALLS =====
     async function api(path, init={}){
-      const tok = getToken();
+      const tok = await ensureToken();
       if (!tok) throw new Error("Not authenticated");
       const res = await fetch(`https://api.spotify.com/v1${path}`, {
         ...init,
@@ -173,11 +190,7 @@
       } catch (e) { console.warn(e); }
     }
 
-    let lastTrackId = null;
-    let progressMs = 0;
-    let durationMs = 0;
-    let isPlaying = false;
-    let tickHandle = null;
+    let lastTrackId = null, progressMs = 0, durationMs = 0, isPlaying = false, tickHandle = null, pollHandle = null;
 
     async function fetchNowPlaying(){
       try {
@@ -189,7 +202,6 @@
         durationMs = t.duration_ms;
         progressMs = np.progress_ms || 0;
         isPlaying = !!np.is_playing;
-
         $("title").textContent = t.name || '—';
         $("artist").textContent = (t.artists||[]).map(a=>a.name).join(', ');
         $("album").textContent = t.album?.name || '—';
@@ -198,13 +210,8 @@
         const img = t.album?.images?.[1]?.url || t.album?.images?.[0]?.url;
         if (img) $("art").src = img;
         $("progress").style.width = `${Math.min(100, (progressMs/durationMs)*100)}%`;
-
-        // On track change, fetch audio features once
         if (lastTrackId) fetchAudioFeatures(lastTrackId);
-      } catch (e) {
-        if (String(e).includes('Not authenticated')) return;
-        console.error(e);
-      }
+      } catch (e) { console.error(e); }
     }
 
     async function fetchAudioFeatures(trackId){
@@ -229,47 +236,32 @@
         }
       }, 1000);
     }
-
-    let pollHandle = null;
     function startPolling(){
       if (pollHandle) clearInterval(pollHandle);
-      pollHandle = setInterval(fetchNowPlaying, 2000); // 2s polling for live-ish updates
+      pollHandle = setInterval(fetchNowPlaying, 2000);
     }
-
-    // ===== OPTIONAL: Initialize Web Playback SDK (if you also want to control playback)
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      // Requires the "streaming" scope and a valid token
-      const tok = getToken();
-      if (!tok) return;
-      const player = new Spotify.Player({ name: 'Visualizer Player', getOAuthToken: cb => cb(tok.access_token), volume: 0.5 });
-      player.addListener('ready', ({ device_id }) => { console.log('Web Playback SDK ready with Device ID', device_id); });
-      player.addListener('not_ready', ({ device_id }) => { console.log('Device ID has gone offline', device_id); });
-      player.addListener('initialization_error', ({ message }) => console.error(message));
-      player.addListener('authentication_error', ({ message }) => console.error(message));
-      player.addListener('account_error', ({ message }) => console.error(message));
-      player.addListener('player_state_changed', state => {
-        if (!state) return;
-        isPlaying = !state.paused;
-        progressMs = state.position;
-        durationMs = state.duration;
-        $("position").textContent = msToClock(progressMs);
-        $("duration").textContent = msToClock(durationMs);
-        $("progress").style.width = `${Math.min(100, (progressMs/durationMs)*100)}%`;
-      });
-      player.connect();
-    };
 
     // ===== WIRE UP =====
     $("btnAuth").addEventListener('click', login);
-    $("btnLogout").addEventListener('click', logout);
+    $("btnLogout").addEventListener('click', ()=>{
+      localStorage.removeItem("spotify_token");
+      localStorage.removeItem("spotify_state");
+      localStorage.removeItem("spotify_code_verifier");
+      localStorage.removeItem("spotify_refresh_token");
+      location.href = "/index.html";
+    });
 
     (async function init(){
-      const tok = getToken();
-      if (tok) {
-        await me();
-        await fetchNowPlaying();
-        startTicker();
-        startPolling();
+      try {
+        const tok = await ensureToken();
+        if (tok) {
+          await me();
+          await fetchNowPlaying();
+          startTicker();
+          startPolling();
+        }
+      } catch (e) {
+        console.warn(e);
       }
     })();
   </script>
