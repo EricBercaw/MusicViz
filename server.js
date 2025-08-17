@@ -20,3 +20,8 @@ const PORT = 3000;
 https.createServer(options, app).listen(PORT, () => {
   console.log(`✅ HTTPS server running at https://localhost:${PORT}`);
 });
+
+app.get('/callback', (req, res) => {
+  // Always serve your index.html for the callback
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
