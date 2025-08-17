@@ -94,30 +94,45 @@
       url.searchParams.set("redirect_uri", REDIRECT_URI);
       url.searchParams.set("scope", SCOPES.join(" "));
       url.searchParams.set("state", state);
-      url.searchParams.set("show_dialog", "false");
+      url.searchParams.set("show_dialog", "true");
       console.log("Authorize URL:", url.toString());
       window.location = url.toString();
     }
 
-    function parseHash(){
-      if (!location.hash.startsWith("#")) return null;
-      const params = new URLSearchParams(location.hash.substring(1));
-      const access_token = params.get("access_token");
-      const token_type = params.get("token_type");
-      const expires_in = Number(params.get("expires_in"));
-      const state = params.get("state");
-      if (!access_token) return null;
-      if (state !== localStorage.getItem("spotify_state")) {
-        console.warn("State mismatch; ignoring tokens.");
-        return null;
-      }
-      const expires_at = Date.now() + (expires_in * 1000) - 5000; // small buffer
-      const token = { access_token, token_type, expires_at };
-      localStorage.setItem("spotify_token", JSON.stringify(token));
-      // Clean the hash from URL
-      history.replaceState({}, document.title, REDIRECT_URI);
-      return token;
-    }
+    function parseHash() {
+  if (!location.hash.startsWith("#")) return null;
+  const params = new URLSearchParams(location.hash.substring(1));
+
+  // If Spotify returned an error in the hash, surface it
+  const err = params.get("error");
+  if (err) {
+    console.error("Spotify auth error:", err);
+    alert("Spotify auth error: " + err);
+    return null;
+  }
+
+  const access_token = params.get("access_token");
+  const token_type = params.get("token_type");
+  const expires_in = Number(params.get("expires_in"));
+  const state = params.get("state");
+  if (!access_token) return null;
+
+  // Protect against mixing localhost/127.0.0.1 tabs
+  if (state !== localStorage.getItem("spotify_state")) {
+    console.warn("State mismatch; ignoring tokens.");
+    alert("State mismatch. Clear storage and try again.");
+    return null;
+  }
+
+  const expires_at = Date.now() + (expires_in * 1000) - 5000;
+  const token = { access_token, token_type, expires_at };
+  localStorage.setItem("spotify_token", JSON.stringify(token));
+
+  // clean hash
+  history.replaceState({}, document.title, REDIRECT_URI);
+  return token;
+}
+
 
     function getToken(){
       const parsed = parseHash();
