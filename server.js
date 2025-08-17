@@ -16,6 +16,20 @@ const options = {
 
 const app = express();
 
+app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' https://sdk.scdn.co",             // add 'unsafe-eval' here only if truly needed
+      "connect-src 'self' https://api.spotify.com https://accounts.spotify.com",
+      "img-src 'self' data: https:",
+      "style-src 'self' 'unsafe-inline'"
+    ].join("; ")
+  );
+  next();
+});
+
 // Serve static files (your index.html, css, js)
 app.use(express.static(__dirname));
 
