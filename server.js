@@ -146,6 +146,41 @@ app.get('/token', async (req, res) => {
   }
 });
 
+// --- Logout / clear tokens ---
+let cachedClientToken = typeof cachedClientToken === 'undefined' ? null : cachedClientToken;
+let clientTokenExpires = typeof clientTokenExpires === 'undefined' ? 0 : clientTokenExpires;
+
+function clearTokenCaches() {
+  // Clear any server-side token caches
+  cachedClientToken = null;
+  clientTokenExpires = 0;
+  // If you also have old vars from the preview build, clear them too:
+  // if (typeof cachedToken !== 'undefined') cachedToken = null;
+  // if (typeof tokenExpiresAt !== 'undefined') tokenExpiresAt = 0;
+}
+
+app.post('/logout', (req, res) => {
+  try {
+    clearTokenCaches();
+    req.session.destroy(err => {
+      if (err) return res.status(500).json({ error: 'logout_failed' });
+      res.clearCookie('connect.sid'); // change if you renamed the session cookie
+      return res.sendStatus(204);
+    });
+  } catch {
+    return res.status(500).json({ error: 'logout_error' });
+  }
+});
+
+// Optional convenience GET for manual testing
+app.get('/logout', (req, res) => {
+  clearTokenCaches();
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    res.redirect('/');
+  });
+});
+
 // ---- API: Me (login status) ----
 app.get('/api/me', async (req, res) => {
   try {
@@ -162,8 +197,6 @@ app.get('/api/me', async (req, res) => {
 });
 
 // ---- API: search (user token preferred; falls back to client credentials) ----
-let cachedClientToken = null;
-let clientTokenExpires = 0;
 async function clientCredentialsToken() {
   const now = Date.now();
   if (cachedClientToken && now < clientTokenExpires - 10_000) return cachedClientToken;
