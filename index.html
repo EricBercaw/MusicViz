@@ -68,8 +68,8 @@
 
   <script>
     // ===== CONFIG =====
-    const CLIENT_ID = "07f3dda064eb4a6c9226822edd2885b7"; // <-- put your app's Client ID here
-    const REDIRECT_URI = "http://127.0.0.1:3000";  // use your real path & correct spelling
+    const CLIENT_ID = "07f3dda064eb4a6c9226822edd2885b7"; // <-- your Spotify app's Client ID
+    const REDIRECT_URI = "http://127.0.0.1:3000"; // must EXACTLY match a saved Redirect URI in your Spotify dashboard
     const SCOPES = [
       "user-read-playback-state",
       "user-read-currently-playing"
@@ -95,6 +95,7 @@
       url.searchParams.set("scope", SCOPES.join(" "));
       url.searchParams.set("state", state);
       url.searchParams.set("show_dialog", "false");
+      console.log("Authorize URL:", url.toString());
       window.location = url.toString();
     }
 
