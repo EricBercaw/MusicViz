@@ -1,50 +1,87 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>MusicViz — Spotify Premium</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <header class="app-header">
-    <h1>MusicViz (Premium)</h1>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>MusicViz — Spotify Premium</title>
+    <link rel="stylesheet" href="../src/styles.css"/>
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>MusicViz (Eric Bercaw)</h1>
+      <form id="search-form" autocomplete="on">
+        <input id="q" name="q" type="search" placeholder="Search songs or artists…" />
+        <button type="submit" title="Search">Search</button>
+        <button id="clearSearch" type="button" title="Clear search">×</button>
+        <span id="searchStatus"></span>
+        <span id="searchError"></span>
+        <span id="searchResultsCount"></span>
+        <span id="searchResultsTime"></span>
+      </form>
 
-    <form id="search-form" autocomplete="off">
-      <input id="q" name="q" type="search" placeholder="Search songs or artists…" />
-      <button type="submit" title="Search">Search</button>
-    </form>
-
-    <div class="auth">
-      <button id="loginBtn">Login with Spotify</button>
-      <button id="logoutBtn" type="button">Log out</button>
-      <span id="userBadge"></span>
-    </div>
-  </header>
-
-  <main class="app-main">
-    <section class="results" id="results"></section>
-
-    <section class="player">
-      <div class="now-playing" id="nowPlaying">Login, then pick a track</div>
-      <div class="controls">
-        <button id="play">Play</button>
-        <button id="pause">Pause</button>
+      <div id="root"></div>
+        <!-- everything else can be rendered by React -->
+        <!-- Spotify Web Playback SDK -->
+        <script src="https://sdk.scdn.co/spotify-player.js"></script>
+        <script type="module" src="/src/Viz.jsx"></script>
+  
+      <div class="auth">
+        <button id="loginBtn">Login with Spotify</button>
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="logoutBtn" type="button">Log out</button>
+        <span id="userName"></span>
+        <span id="userImage"></span>
+        <span id="userId"></span>
+        <span id="userBadge"></span>
       </div>
-      <canvas id="viz" width="1024" height="320"></canvas>
-      <!-- No <audio> tag: playback is via Web Playback SDK -->
-    </section>
-  </main>
+    </header>
 
-  <footer class="app-footer">
-    <small>
-      Uses Spotify Web Playback SDK (Premium required). Audio cannot be routed into Web Audio due to DRM;
-      visualization is driven by Spotify Audio Analysis + player position.
-    </small>
-  </footer>
+    <main class="app-main">
+      <section class="results" id="results"></section>
 
-  <!-- Spotify Web Playback SDK -->
-  <script src="https://sdk.scdn.co/spotify-player.js"></script>
-  <script src="index.js" type="module"></script>
-</body>
+      <section class="player">
+
+        <div class="now-playing" id="nowPlaying">Login, then pick a track</div>
+        <div class="track-info">
+          <img id="trackImage" src="" alt="Track cover" />
+          <div class="track-details">
+            <h2 id="trackName">Track Name</h2>
+            <p id="trackArtists">Artist(s)</p>
+            <p id="trackAlbum">Album</p>
+          </div>
+        </div>
+
+        <div class="audio-controls">
+          <button id="prevTrack">Prev</button>
+          <button id="nextTrack">Next</button>
+          <button id="shuffle">Shuffle</button>
+          <button id="repeat">Repeat</button>
+        </div>
+
+        <div class="controls">
+          <button id="mute">Mute</button>
+          <button id="unmute">Unmute</button>
+          <button id="play">Play</button>
+          <button id="pause">Pause</button>
+        </div>
+
+        <canvas id="viz" width="1024" height="320"></canvas>
+
+        <div class="progress">
+          <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
+          <input type="range" id="seekBar" value="0" min="0" max="100" />
+          <button id="toggleFullScreen">Full Screen</button>
+        </div>
+        <!-- No <audio> tag: playback is via Web Playback SDK -->
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <small>
+        Uses Spotify Web Playback SDK (Premium required). Audio cannot be routed into Web Audio due to DRM;
+        visualization is driven by Spotify Audio Analysis + player position.
+      </small>
+    </footer>
+
+  </body>
 </html>
