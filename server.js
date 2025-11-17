@@ -9,12 +9,11 @@ app.get("/", (req, res) => {
 });
 
 const options = {
-  key: fs.readFileSync("localhost-key.pem"),
-  cert: fs.readFileSync("localhost.pem"),
+  key: fs.readFileSync("cert/server.key"),
+  cert: fs.readFileSync("cert/server.cert"),
 };
 
 https.createServer(options, app).listen(3000, () => {
   console.log("HTTPS server running at https://localhost:3000");
 });
-
 
