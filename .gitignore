@@ -1,3 +1,11 @@
-# Ignore environment files
+# Node
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Env / secrets
 .env
 
+# Certs (optional, if you don’t want these in git)
+cert/*
+!cert/.gitkeep
