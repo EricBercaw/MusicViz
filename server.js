@@ -62,14 +62,13 @@ app.get("/callback", async (req, res) => {
   }
 });
 
-// ---- HTTPS setup ----
-const options = {
+// ---- HTTPS SERVER ----
+const httpsOptions = {
   key: fs.readFileSync("cert/server.key"),
-  cert: fs.readFileSync("cert/server.cert")
+  cert: fs.readFileSync("cert/server.cert"),
 };
 
-https.createServer(options, app).listen(3000, () => {
-  console.log("HTTPS server running at https://localhost:3000");
+https.createServer(httpsOptions, app).listen(8443, "127.0.0.1", () => {
+  console.log("HTTPS server running at https://127.0.0.1:8443/");
 });
-
 
