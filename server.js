@@ -2,6 +2,7 @@ const https = require("https");
 const fs = require("fs");
 const express = require("express");
 const SpotifyWebApi = require("spotify-web-api-node");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
@@ -15,7 +16,10 @@ const spotifyApi = new SpotifyWebApi({
 
 // Home route
 app.get("/", (req, res) => {
-  res.send('<h1>MusicViz</h1><a href="/login">Log in with Spotify</a>');
+  res.send(`
+    <h1>MusicViz</h1>
+    <p><a href="/login">Log in with Spotify</a></p>
+  `);
 });
 
 // Step 1: Redirect user to Spotify login
@@ -51,15 +55,58 @@ app.get("/callback", async (req, res) => {
     // Example: fetch user's top 10 tracks
     const topTracksResponse = await spotifyApi.getMyTopTracks({ limit: 10 });
 
-    res.send(`
-      <h1>Logged in with Spotify!</h1>
-      <p>Here are your top tracks (raw JSON for now):</p>
-      <pre>${JSON.stringify(topTracksResponse.body, null, 2)}</pre>
-    `);
+    // Instead of dumping JSON, send user to the visualizer page
+    res.redirect("/visualizer");
   } catch (err) {
     console.error("Error during Spotify callback:", err);
     res.status(500).send("Error during Spotify authentication");
   }
+
+});
+
+// ---- API route: current track + audio features ----
+app.get("/now-playing", async (req, res) => {
+  try {
+    const current = await spotifyApi.getMyCurrentPlayingTrack();
+
+    if (!current.body || !current.body.item) {
+      return res.json({ playing: false });
+    }
+
+    const track = current.body.item;
+    const progressMs = current.body.progress_ms;
+    const isPlaying = current.body.is_playing;
+
+    // Get audio features (energy, tempo, valence, etc.)
+    const featuresResponse = await spotifyApi.getAudioFeaturesForTrack(track.id);
+    const features = featuresResponse.body;
+
+    res.json({
+      playing: isPlaying,
+      track: {
+        id: track.id,
+        name: track.name,
+        artists: track.artists.map(a => a.name).join(", "),
+        album: track.album.name
+      },
+      progressMs,
+      durationMs: track.duration_ms,
+      features: {
+        energy: features.energy,
+        tempo: features.tempo,
+        valence: features.valence,
+        danceability: features.danceability
+      }
+    });
+  } catch (err) {
+    console.error("Error in /now-playing:", err);
+    res.status(500).json({ error: "Failed to fetch now playing" });
+  }
+});
+
+// ---- Visualizer page ----
+app.get("/visualizer", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "visualizer.html"));
 });
 
 // ---- HTTPS SERVER ----
