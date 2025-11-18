@@ -61,12 +61,19 @@
         const data = await res.json();
         lastFetch = Date.now();
 
-        if (!data.playing) {
-          playing = false;
+       if (!data.playing) {
+        playing = false;
+
+        if (data.reason === "paused" && data.track) {
+          trackEl.textContent = "Paused: " + data.track.name + " — " + data.track.artists;
+          statusEl.textContent = "(Press play in Spotify)";
+        } else {
           trackEl.textContent = "Nothing playing on Spotify";
           statusEl.textContent = "";
-          return;
         }
+
+        return;
+      }
 
         playing = true;
         trackEl.textContent = data.track.name + " — " + data.track.artists;
